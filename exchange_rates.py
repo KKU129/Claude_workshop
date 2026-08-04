@@ -71,3 +71,36 @@ def compute_delta(prev_value: float, latest_value: float):
     diff = latest_value - prev_value
     pct = (diff / prev_value * 100) if prev_value else 0.0
     return diff, pct
+
+
+def summarize_series(points: List[Point]) -> Dict[str, object]:
+    """Compute headline stats for a USD->EUR series (see specs/rate_summary.md).
+
+    ``points`` is ordered oldest -> newest. Raises ValueError if empty.
+    """
+    if not points:
+        raise ValueError("Cannot summarize an empty series")
+
+    values = [float(p["value"]) for p in points]
+    first = values[0]
+    latest = values[-1]
+    change = round(latest - first, 4)
+    pct_change = round(change / first * 100, 2) if first else 0.0
+
+    if abs(change) < 1e-9:
+        trend = "flat"
+    elif change > 0:
+        trend = "up"
+    else:
+        trend = "down"
+
+    return {
+        "high": max(values),
+        "low": min(values),
+        "average": round(sum(values) / len(values), 4),
+        "first": first,
+        "latest": latest,
+        "change": change,
+        "pct_change": pct_change,
+        "trend": trend,
+    }
