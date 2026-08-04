@@ -388,8 +388,8 @@
 
   function buildDefaultSeries() {
     // Fallback shown when no live source is reachable: one point per day for
-    // the last 7 days, values incrementing by 1 (oldest = 1 ... newest = 7).
-    return last7Dates().map((date, i) => ({ date, value: i + 1 }));
+    // the last 7 days, values incrementing by 0.1 (oldest = 1.0 ... newest = 1.6).
+    return last7Dates().map((date, i) => ({ date, value: 1 + i * 0.1 }));
   }
 
   async function fetchSeries() {
@@ -511,7 +511,7 @@
       renderHeadline(points);
       renderChart(points);
       setStatus('error', 'Showing default sample data (live sources unavailable)');
-      showError(`Could not load live exchange rate data: ${err.message}. Displaying default sample values (1–7); will retry automatically, or use "Refresh now".`);
+      showError(`Could not load live exchange rate data: ${err.message}. Displaying default sample values (1.0–1.6); will retry automatically, or use "Refresh now".`);
     }
   }
 
