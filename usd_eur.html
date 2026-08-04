@@ -272,7 +272,8 @@
   </div>
 
   <div class="source-note">
-    Source: European Central Bank reference rates, via <a href="https://frankfurter.dev" target="_blank" rel="noopener">frankfurter.dev</a>.
+    Source: <a href="https://github.com/fawazahmed0/exchange-api" target="_blank" rel="noopener">Currency API</a>
+    (daily rates, keyless), served via jsDelivr with a Cloudflare Pages fallback.
     Auto-refreshes every 2 hours.
   </div>
 
@@ -280,9 +281,15 @@
 
 <script>
 (function () {
-  const API_BASE = 'https://api.frankfurter.dev/v2';
-  const BASE_CCY = 'USD';
-  const QUOTE_CCY = 'EUR';
+  // Currency API by fawazahmed0 — free, keyless, one JSON file per date.
+  // Primary CDN is jsDelivr; if a date/file is missing there we retry the
+  // Cloudflare Pages mirror before giving up on that day.
+  const BASE_CCY = 'USD';   // display label
+  const QUOTE_CCY = 'EUR';  // display label
+  const BASE = 'usd';       // API currency code (lowercase)
+  const QUOTE = 'eur';      // API currency code (lowercase)
+  const primaryUrl = (date) => `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/${BASE}.json`;
+  const fallbackUrl = (date) => `https://${date}.currency-api.pages.dev/v1/currencies/${BASE}.json`;
   const REFRESH_MS = 2 * 60 * 60 * 1000; // 2 hours
 
   const el = {
@@ -302,11 +309,15 @@
     return d.toISOString().slice(0, 10);
   }
 
-  function dateRangeLast7Days() {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    return { start: fmtDate(start), end: fmtDate(end) };
+  function last7Dates() {
+    // Oldest -> newest, inclusive of today (7 calendar days).
+    const dates = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      dates.push(fmtDate(d));
+    }
+    return dates;
   }
 
   function setStatus(mode, text) {
@@ -330,18 +341,34 @@
     });
   }
 
-  async function fetchSeries() {
-    const { start, end } = dateRangeLast7Days();
-    const url = `${API_BASE}/${start}..${end}?base=${BASE_CCY}&symbols=${QUOTE_CCY}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`API responded with ${res.status}`);
-    const data = await res.json();
-    if (!data.rates) throw new Error('Unexpected response shape');
+  async function fetchDay(date) {
+    // Try jsDelivr first, then the Cloudflare Pages mirror.
+    for (const url of [primaryUrl(date), fallbackUrl(date)]) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const value = data && data[BASE] && data[BASE][QUOTE];
+        if (typeof value === 'number') {
+          return { date: data.date || date, value };
+        }
+      } catch (_) {
+        // try next source
+      }
+    }
+    return null; // this day is unavailable from both sources
+  }
 
-    const points = Object.keys(data.rates)
-      .sort()
-      .map((date) => ({ date, value: data.rates[date][QUOTE_CCY] }))
-      .filter((p) => typeof p.value === 'number');
+  async function fetchSeries() {
+    const dates = last7Dates();
+    const results = await Promise.all(dates.map((d) => fetchDay(d)));
+
+    // Keep only days we resolved, dedupe by date, and sort oldest -> newest.
+    const byDate = new Map();
+    results.filter(Boolean).forEach((p) => byDate.set(p.date, p.value));
+    const points = [...byDate.entries()]
+      .map(([date, value]) => ({ date, value }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     if (points.length === 0) throw new Error('No rate data returned for this range');
     return points;
