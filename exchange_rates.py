@@ -71,3 +71,29 @@ def compute_delta(prev_value: float, latest_value: float):
     diff = latest_value - prev_value
     pct = (diff / prev_value * 100) if prev_value else 0.0
     return diff, pct
+
+
+def recent_conversions(points: List[Point], amount: float, limit: int = 7) -> List[Dict[str, object]]:
+    """Recent daily USD->EUR conversion rows (see specs/recent_conversions.md).
+
+    ``points`` is ordered oldest -> newest; returns the most recent ``limit``
+    days as rows ordered newest -> oldest. Each row converts ``amount`` USD to
+    EUR at that day's rate.
+    """
+    if limit < 1:  # AC6
+        raise ValueError("limit must be at least 1")
+    if isinstance(amount, bool) or not isinstance(amount, Real) or amount < 0:  # AC6
+        raise ValueError("amount must be a non-negative number")
+
+    amount = float(amount)
+    recent = list(reversed(points[-limit:]))  # AC2/AC3: most recent first
+    rows = []
+    for p in recent:
+        rate = round(float(p["value"]), 4)  # AC4: rate value -> 4 decimals
+        rows.append({
+            "date": p["date"],
+            "rate": rate,
+            "usd": amount,
+            "eur": round(amount * rate, 2),  # AC4: convert via the shown rate -> cents
+        })
+    return rows
