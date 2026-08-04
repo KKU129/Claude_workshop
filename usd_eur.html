@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>USD → EUR — 7 Day Rate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1220;
+    --surface: #121B2E;
+    --surface-alt: #182437;
+    --border: #22314A;
+    --text-primary: #EDF1F7;
+    --text-secondary: #7C8BA8;
+    --text-tertiary: #4C5B78;
+    --accent: #4C8FD4;
+    --accent-dim: rgba(76, 143, 212, 0.14);
+    --positive: #4FD1A5;
+    --negative: #F1727B;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+    padding: 48px 20px;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 720px;
+  }
+
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 18px;
+    margin-bottom: 28px;
+  }
+
+  .masthead-pair {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+
+  .masthead-pair strong { color: var(--accent); font-weight: 600; }
+
+  .masthead-clock {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+
+  .rate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 32px 32px 28px;
+    margin-bottom: 20px;
+  }
+
+  .rate-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .rate-figure {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 8vw, 56px);
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+
+  .rate-figure sup {
+    font-size: 0.4em;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-left: 8px;
+    top: -0.6em;
+  }
+
+  .rate-delta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .rate-delta.up { color: var(--positive); background: rgba(79, 209, 165, 0.12); }
+  .rate-delta.down { color: var(--negative); background: rgba(241, 114, 123, 0.12); }
+  .rate-delta.flat { color: var(--text-secondary); background: var(--surface-alt); }
+
+  .chart-wrap { position: relative; width: 100%; }
+  svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .axis-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    fill: var(--text-tertiary);
+  }
+
+  .grid-line { stroke: var(--border); stroke-width: 1; }
+
+  .price-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.25;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .price-fill { fill: url(#areaGradient); }
+
+  .point {
+    fill: var(--bg);
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .point.latest { fill: var(--accent); r: 5; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+    transform: translate(-50%, -130%);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    white-space: nowrap;
+  }
+  .tooltip.visible { opacity: 1; }
+  .tooltip .t-date { color: var(--text-secondary); }
+
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--positive);
+    box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.15);
+  }
+  .status-dot.error { background: var(--negative); box-shadow: 0 0 0 3px rgba(241, 114, 123, 0.15); }
+  .status-dot.loading { background: var(--text-tertiary); box-shadow: none; animation: pulse 1.2s ease-in-out infinite; }
+
+  @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+  .refresh-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .source-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-align: center;
+    margin-top: 18px;
+  }
+  .source-note a { color: var(--text-tertiary); text-decoration: underline; }
+
+  .error-panel {
+    display: none;
+    background: rgba(241, 114, 123, 0.08);
+    border: 1px solid rgba(241, 114, 123, 0.3);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--negative);
+    margin-bottom: 20px;
+  }
+  .error-panel.visible { display: block; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot.loading { animation: none; }
+  }
+
+  @media (max-width: 480px) {
+    .rate-card { padding: 24px 18px 20px; }
+    .masthead { align-items: flex-start; flex-direction: column; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <div class="masthead-pair">USD <strong>→</strong> EUR · 7 day reference rate</div>
+    <div class="masthead-clock" id="clock">—</div>
+  </div>
+
+  <div class="error-panel" id="errorPanel"></div>
+
+  <div class="rate-card">
+    <div class="rate-row">
+      <div class="rate-figure" id="rateFigure">—<sup>EUR</sup></div>
+      <div class="rate-delta flat" id="rateDelta">—</div>
+    </div>
+    <div class="chart-wrap">
+      <svg id="chart" viewBox="0 0 640 220" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4C8FD4" stop-opacity="0.22"/>
+            <stop offset="100%" stop-color="#4C8FD4" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g id="chartGroup"></g>
+      </svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+  </div>
+
+  <div class="footer-row">
+    <div class="status">
+      <span class="status-dot loading" id="statusDot"></span>
+      <span id="statusText">Fetching latest rates…</span>
+    </div>
+    <button class="refresh-btn" id="refreshBtn">Refresh now</button>
+  </div>
+
+  <div class="source-note">
+    Source: European Central Bank reference rates, via <a href="https://frankfurter.dev" target="_blank" rel="noopener">frankfurter.dev</a>.
+    Auto-refreshes every 2 hours.
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const API_BASE = 'https://api.frankfurter.dev/v2';
+  const BASE_CCY = 'USD';
+  const QUOTE_CCY = 'EUR';
+  const REFRESH_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+  const el = {
+    rateFigure: document.getElementById('rateFigure'),
+    rateDelta: document.getElementById('rateDelta'),
+    chartGroup: document.getElementById('chartGroup'),
+    chart: document.getElementById('chart'),
+    tooltip: document.getElementById('tooltip'),
+    statusDot: document.getElementById('statusDot'),
+    statusText: document.getElementById('statusText'),
+    refreshBtn: document.getElementById('refreshBtn'),
+    errorPanel: document.getElementById('errorPanel'),
+    clock: document.getElementById('clock'),
+  };
+
+  function fmtDate(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  function dateRangeLast7Days() {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    return { start: fmtDate(start), end: fmtDate(end) };
+  }
+
+  function setStatus(mode, text) {
+    el.statusDot.className = 'status-dot' + (mode ? ' ' + mode : '');
+    el.statusText.textContent = text;
+  }
+
+  function showError(msg) {
+    el.errorPanel.textContent = msg;
+    el.errorPanel.classList.add('visible');
+  }
+  function clearError() {
+    el.errorPanel.classList.remove('visible');
+  }
+
+  function updateClock() {
+    const now = new Date();
+    el.clock.textContent = now.toLocaleString(undefined, {
+      weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  async function fetchSeries() {
+    const { start, end } = dateRangeLast7Days();
+    const url = `${API_BASE}/${start}..${end}?base=${BASE_CCY}&symbols=${QUOTE_CCY}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`API responded with ${res.status}`);
+    const data = await res.json();
+    if (!data.rates) throw new Error('Unexpected response shape');
+
+    const points = Object.keys(data.rates)
+      .sort()
+      .map((date) => ({ date, value: data.rates[date][QUOTE_CCY] }))
+      .filter((p) => typeof p.value === 'number');
+
+    if (points.length === 0) throw new Error('No rate data returned for this range');
+    return points;
+  }
+
+  function renderChart(points) {
+    const W = 640, H = 220;
+    const padL = 8, padR = 8, padT = 16, padB = 28;
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+
+    const values = points.map((p) => p.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 0.0001;
+    const pad = range * 0.15;
+    const yMin = min - pad, yMax = max + pad;
+
+    const x = (i) => padL + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
+    const y = (v) => padT + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+
+    let path = '';
+    points.forEach((p, i) => {
+      path += (i === 0 ? 'M' : 'L') + x(i).toFixed(2) + ',' + y(p.value).toFixed(2) + ' ';
+    });
+
+    let areaPath = path + `L${x(points.length - 1).toFixed(2)},${(padT + innerH).toFixed(2)} `
+      + `L${x(0).toFixed(2)},${(padT + innerH).toFixed(2)} Z`;
+
+    const gridLines = [0, 0.5, 1].map((f) => {
+      const gy = padT + innerH * f;
+      return `<line class="grid-line" x1="${padL}" y1="${gy.toFixed(2)}" x2="${W - padR}" y2="${gy.toFixed(2)}" stroke-dasharray="${f === 1 ? 'none' : '3,4'}" />`;
+    }).join('');
+
+    const dots = points.map((p, i) => {
+      const isLast = i === points.length - 1;
+      return `<circle class="point${isLast ? ' latest' : ''}" cx="${x(i).toFixed(2)}" cy="${y(p.value).toFixed(2)}" r="${isLast ? 5 : 3}" data-idx="${i}"></circle>`;
+    }).join('');
+
+    const labelEvery = points.length > 6 ? 2 : 1;
+    const labels = points.map((p, i) => {
+      if (i % labelEvery !== 0 && i !== points.length - 1) return '';
+      const d = new Date(p.date + 'T00:00:00');
+      const txt = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return `<text class="axis-label" x="${x(i).toFixed(2)}" y="${H - 6}" text-anchor="middle">${txt}</text>`;
+    }).join('');
+
+    el.chartGroup.innerHTML =
+      gridLines +
+      `<path class="price-fill" d="${areaPath}"></path>` +
+      `<path class="price-line" d="${path}"></path>` +
+      dots +
+      labels;
+
+    // hover interactions
+    el.chartGroup.querySelectorAll('.point').forEach((circle) => {
+      circle.style.cursor = 'pointer';
+      circle.addEventListener('mouseenter', (e) => {
+        const idx = +circle.getAttribute('data-idx');
+        const p = points[idx];
+        const rect = el.chart.getBoundingClientRect();
+        const cx = (parseFloat(circle.getAttribute('cx')) / W) * rect.width;
+        const cy = (parseFloat(circle.getAttribute('cy')) / H) * rect.height;
+        const d = new Date(p.date + 'T00:00:00');
+        el.tooltip.innerHTML = `<span class="t-date">${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> &nbsp; 1 USD = ${p.value.toFixed(4)} EUR`;
+        el.tooltip.style.left = cx + 'px';
+        el.tooltip.style.top = cy + 'px';
+        el.tooltip.classList.add('visible');
+      });
+      circle.addEventListener('mouseleave', () => el.tooltip.classList.remove('visible'));
+    });
+  }
+
+  function renderHeadline(points) {
+    const latest = points[points.length - 1];
+    const prev = points.length > 1 ? points[points.length - 2] : latest;
+    el.rateFigure.innerHTML = latest.value.toFixed(4) + '<sup>EUR</sup>';
+
+    const diff = latest.value - prev.value;
+    const pct = (diff / prev.value) * 100;
+    el.rateDelta.classList.remove('up', 'down', 'flat');
+    if (Math.abs(diff) < 0.00005) {
+      el.rateDelta.classList.add('flat');
+      el.rateDelta.textContent = '± 0.0000 (0.00%)';
+    } else if (diff > 0) {
+      el.rateDelta.classList.add('up');
+      el.rateDelta.textContent = `▲ ${diff.toFixed(4)} (${pct.toFixed(2)}%)`;
+    } else {
+      el.rateDelta.classList.add('down');
+      el.rateDelta.textContent = `▼ ${Math.abs(diff).toFixed(4)} (${pct.toFixed(2)}%)`;
+    }
+  }
+
+  async function load() {
+    setStatus('loading', 'Fetching latest rates…');
+    clearError();
+    try {
+      const points = await fetchSeries();
+      renderHeadline(points);
+      renderChart(points);
+      const now = new Date();
+      setStatus('', `Updated ${now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · next refresh in 2h`);
+    } catch (err) {
+      setStatus('error', 'Refresh failed');
+      showError(`Could not load exchange rate data: ${err.message}. It will retry automatically, or use "Refresh now".`);
+    }
+  }
+
+  el.refreshBtn.addEventListener('click', load);
+  updateClock();
+  setInterval(updateClock, 60 * 1000);
+
+  load();
+  setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
