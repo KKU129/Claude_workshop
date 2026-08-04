@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""
+refresh_agent.py
+
+Periodic agent for the EUR -> USD exchange rate dashboard.
+
+What it does:
+  1. Calls the Frankfurter API for the EUR->USD reference rate over the
+     last 7 days.
+  2. Appends/updates a local JSON snapshot (data/eur_usd_latest.json) that
+     the web page can optionally read instead of hitting the API directly
+     (useful if you want a cached/offline copy, or want to log history
+     beyond what the API keeps returning).
+  3. Logs a timestamped line to refresh_agent.log so you have an audit
+     trail of every run.
+
+Intended schedule (per current request): run once now, then once more in
+2 hours, today only. See "Scheduling" below for exact commands.
+
+No API key is required. No arguments are required.
+"""
+
+import json
+import sys
+import urllib.request
+import urllib.error
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+API_BASE = "https://api.frankfurter.dev/v2"
+BASE_CCY = "EUR"
+QUOTE_CCY = "USD"
+
+OUT_DIR = Path(__file__).resolve().parent / "data"
+OUT_FILE = OUT_DIR / "eur_usd_latest.json"
+LOG_FILE = Path(__file__).resolve().parent / "refresh_agent.log"
+
+
+def log(message: str) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    line = f"[{timestamp}] {message}"
+    print(line)
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def fetch_series() -> dict:
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=7)
+    url = f"{API_BASE}/{start.isoformat()}..{end.isoformat()}?base={BASE_CCY}&symbols={QUOTE_CCY}"
+    req = urllib.request.Request(url, headers={"User-Agent": "eur-usd-refresh-agent/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"API returned HTTP {resp.status}")
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def main() -> int:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        payload = fetch_series()
+        rates = payload.get("rates", {})
+        if not rates:
+            raise RuntimeError("API response had no 'rates' field")
+
+        snapshot = {
+            "base": BASE_CCY,
+            "quote": QUOTE_CCY,
+            "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "rates": rates,  # { "YYYY-MM-DD": { "USD": 1.0834 }, ... }
+        }
+        OUT_FILE.write_text(json.dumps(snapshot, indent=2), encoding="utf-8")
+
+        latest_date = max(rates.keys())
+        latest_value = rates[latest_date][QUOTE_CCY]
+        log(f"OK - fetched {len(rates)} day(s), latest {latest_date} = {latest_value} {QUOTE_CCY} per {BASE_CCY}")
+        return 0
+
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        log(f"ERROR - network/API failure: {e}")
+        return 1
+    except Exception as e:
+        log(f"ERROR - {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
