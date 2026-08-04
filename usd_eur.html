@@ -386,6 +386,12 @@
     return null; // this day is unavailable from every source
   }
 
+  function buildDefaultSeries() {
+    // Fallback shown when no live source is reachable: one point per day for
+    // the last 7 days, values incrementing by 1 (oldest = 1 ... newest = 7).
+    return last7Dates().map((date, i) => ({ date, value: i + 1 }));
+  }
+
   async function fetchSeries() {
     const dates = last7Dates();
     const results = await Promise.all(dates.map((d) => fetchDay(d)));
@@ -499,8 +505,13 @@
       const now = new Date();
       setStatus('', `Updated ${now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · next refresh in 2h`);
     } catch (err) {
-      setStatus('error', 'Refresh failed');
-      showError(`Could not load exchange rate data: ${err.message}. It will retry automatically, or use "Refresh now".`);
+      // No live source reachable — fall back to default sample data so the
+      // page still renders the last 7 days (values incrementing by 1).
+      const points = buildDefaultSeries();
+      renderHeadline(points);
+      renderChart(points);
+      setStatus('error', 'Showing default sample data (live sources unavailable)');
+      showError(`Could not load live exchange rate data: ${err.message}. Displaying default sample values (1–7); will retry automatically, or use "Refresh now".`);
     }
   }
 
