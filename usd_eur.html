@@ -272,25 +272,54 @@
   </div>
 
   <div class="source-note">
-    Source: <a href="https://github.com/fawazahmed0/exchange-api" target="_blank" rel="noopener">Currency API</a>
-    (daily rates, keyless), served via jsDelivr with a Cloudflare Pages fallback.
-    Auto-refreshes every 2 hours.
+    Sources: <a href="https://github.com/fawazahmed0/exchange-api" target="_blank" rel="noopener">Currency API</a>
+    (jsDelivr, Cloudflare Pages mirror) with <a href="https://frankfurter.dev" target="_blank" rel="noopener">Frankfurter</a>
+    (ECB) as a cross-provider fallback. All keyless. Auto-refreshes every 2 hours.
   </div>
 
 </div>
 
 <script>
 (function () {
-  // Currency API by fawazahmed0 — free, keyless, one JSON file per date.
-  // Primary CDN is jsDelivr; if a date/file is missing there we retry the
-  // Cloudflare Pages mirror before giving up on that day.
   const BASE_CCY = 'USD';   // display label
   const QUOTE_CCY = 'EUR';  // display label
-  const BASE = 'usd';       // API currency code (lowercase)
-  const QUOTE = 'eur';      // API currency code (lowercase)
-  const primaryUrl = (date) => `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/${BASE}.json`;
-  const fallbackUrl = (date) => `https://${date}.currency-api.pages.dev/v1/currencies/${BASE}.json`;
   const REFRESH_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+  // Cross-provider fallback chain. For each date we try these sources in
+  // order until one returns a usable { date, value } pair:
+  //   1. Currency API (fawazahmed0) via jsDelivr    — keyless, per-date file
+  //   2. Currency API via Cloudflare Pages mirror   — same data, other CDN
+  //   3. Frankfurter (ECB reference rates)          — keyless, per-date query
+  // Codes are lowercase for the Currency API and uppercase for Frankfurter.
+  const CUR_BASE = 'usd', CUR_QUOTE = 'eur';
+  const FRK_BASE = 'USD', FRK_QUOTE = 'EUR';
+
+  const SOURCES = [
+    {
+      name: 'currency-api (jsDelivr)',
+      url: (date) => `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/${CUR_BASE}.json`,
+      pick: (data, date) => {
+        const value = data && data[CUR_BASE] && data[CUR_BASE][CUR_QUOTE];
+        return typeof value === 'number' ? { date: data.date || date, value } : null;
+      },
+    },
+    {
+      name: 'currency-api (pages.dev)',
+      url: (date) => `https://${date}.currency-api.pages.dev/v1/currencies/${CUR_BASE}.json`,
+      pick: (data, date) => {
+        const value = data && data[CUR_BASE] && data[CUR_BASE][CUR_QUOTE];
+        return typeof value === 'number' ? { date: data.date || date, value } : null;
+      },
+    },
+    {
+      name: 'frankfurter',
+      url: (date) => `https://api.frankfurter.dev/v2/${date}?base=${FRK_BASE}&symbols=${FRK_QUOTE}`,
+      pick: (data, date) => {
+        const value = data && data.rates && data.rates[FRK_QUOTE];
+        return typeof value === 'number' ? { date: data.date || date, value } : null;
+      },
+    },
+  ];
 
   const el = {
     rateFigure: document.getElementById('rateFigure'),
@@ -342,21 +371,19 @@
   }
 
   async function fetchDay(date) {
-    // Try jsDelivr first, then the Cloudflare Pages mirror.
-    for (const url of [primaryUrl(date), fallbackUrl(date)]) {
+    // Walk the provider chain until one yields a usable value for this date.
+    for (const source of SOURCES) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(source.url(date));
         if (!res.ok) continue;
         const data = await res.json();
-        const value = data && data[BASE] && data[BASE][QUOTE];
-        if (typeof value === 'number') {
-          return { date: data.date || date, value };
-        }
+        const point = source.pick(data, date);
+        if (point) return point;
       } catch (_) {
-        // try next source
+        // network/parse error — try the next source
       }
     }
-    return null; // this day is unavailable from both sources
+    return null; // this day is unavailable from every source
   }
 
   async function fetchSeries() {
